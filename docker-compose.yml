@@ -1,0 +1,118 @@
+services:
+  postgres:
+    image: ${NEXTCLOUD_POSTGRES_IMAGE_TAG}
+    volumes:
+      - nextcloud-postgres:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
+      POSTGRES_USER: ${NEXTCLOUD_DB_USER}
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    networks:
+      - nextcloud-network
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-q", "-d", "${NEXTCLOUD_DB_NAME}", "-U", "${NEXTCLOUD_DB_USER}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  redis:
+    image: ${NEXTCLOUD_REDIS_IMAGE_TAG}
+    command: ["redis-server", "--requirepass", "$NEXTCLOUD_REDIS_PASSWORD"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - nextcloud-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  nextcloud:
+    image: ${NEXTCLOUD_IMAGE_TAG}
+    volumes:
+      - nextcloud-data:${DATA_PATH}
+    environment:
+      TZ: ${NEXTCLOUD_TIMEZONE}
+      POSTGRES_HOST: postgres
+      DB_PORT: 5432
+      POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
+      POSTGRES_USER: ${NEXTCLOUD_DB_USER}
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_HOST_PORT: 6379
+      REDIS_HOST_PASSWORD: ${NEXTCLOUD_REDIS_PASSWORD}
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USERNAME}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
+      NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_HOSTNAME}
+      NEXTCLOUD_HOSTNAME: ${NEXTCLOUD_HOSTNAME}
+      OVERWRITECLIURL: ${NEXTCLOUD_URL}
+      OVERWRITEPROTOCOL: https
+      OVERWRITEHOST: ${NEXTCLOUD_HOSTNAME}
+      TRUSTED_PROXIES: 172.16.0.0/12 192.168.0.0/16 10.0.0.0/8 fc00::/7 fe80::/10 2001:db8::/32
+    networks:
+      - nextcloud-network
+      - traefik-server
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nextcloud.rule=Host(`${NEXTCLOUD_HOSTNAME}`)"
+      - "traefik.http.routers.nextcloud.service=nextcloud"
+      - "traefik.http.routers.nextcloud.entrypoints=http"
+      - "traefik.http.routers.nextcloud.middlewares=https-redirect"
+      - "traefik.http.routers.nextcloud-https.rule=Host(`${NEXTCLOUD_HOSTNAME}`)"
+      - "traefik.http.routers.nextcloud-https.service=nextcloud"
+      - "traefik.http.routers.nextcloud-https.entrypoints=https"
+      - "traefik.http.routers.nextcloud.tls=true"
+      - "traefik.http.routers.nextcloud.tls.certresolver=letsencrypt"
+      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
+      - "traefik.http.services.nextcloud.loadbalancer.passhostheader=true"
+      - "traefik.http.middlewares.nextcloud-securityheaders.headers.stsSeconds=15552000"
+      - "traefik.http.middlewares.nextcloud-securityheaders.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.nextcloud-securityheaders.headers.stsPreload=true"
+      - "traefik.http.routers.nextcloud.middlewares=nextcloud-redirectregex1,nextcloud-redirectregex2,compresstraefik,nextcloud-securityheaders"
+      - "traefik.http.middlewares.nextcloud-redirectregex1.redirectregex.permanent=true"
+      - "traefik.http.middlewares.nextcloud-redirectregex1.redirectregex.regex=https?://([^/]*)/.well-known/(card|cal)dav"
+      - "traefik.http.middlewares.nextcloud-redirectregex1.redirectregex.replacement=https://$${1}/remote.php/dav/"
+      - "traefik.http.middlewares.nextcloud-redirectregex2.redirectregex.permanent=true"
+      - "traefik.http.middlewares.nextcloud-redirectregex2.redirectregex.regex=https?://([^/]*)(/.well-known[^#]*)"
+      - "traefik.http.middlewares.nextcloud-redirectregex2.redirectregex.replacement=https://$${1}/index.php$${2}"
+      - "traefik.http.middlewares.compresstraefik.compress=true"
+      - "traefik.docker.network=traefik-server"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  nextcloud-cron:
+    image: ${NEXTCLOUD_IMAGE_TAG}
+    entrypoint: /cron.sh
+    volumes:
+      - nextcloud-data:${DATA_PATH}
+    networks:
+      - nextcloud-network
+networks:
+  nextcloud-network:
+    external: true
+  traefik-server:
+    external: true
+
+volumes:
+  nextcloud-data:
+  redis-data:
+  nextcloud-postgres:
+  nextcloud-postgres-backup:
+  nextcloud-data-backups:
+  nextcloud-database-backups:
