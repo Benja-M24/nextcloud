@@ -1,15 +1,34 @@
 services:
-  postgres:
-    image: ${NEXTCLOUD_POSTGRES_IMAGE_TAG}
+# WatchTower
+  watchtower:
+    image: containrrr/watchtower
+    restart: always
     volumes:
-      - nextcloud-postgres:/var/lib/postgresql/data
-    environment:
-      POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
-      POSTGRES_USER: ${NEXTCLOUD_DB_USER}
-      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
-      POSTGRES_HOST_AUTH_METHOD: trust
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: 
+      - "--label-enable"
+      - "--interval"
+      - "3600"
+      - "--rolling-restart"
     networks:
       - nextcloud-network
+      
+  postgres:
+    image: postgres:16
+    volumes:
+      - ./postgres/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+      - ./postgres/nextcloud-postgres:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: nextclouddb
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: wDyzDH8MowfpuwGyBfNcnaV
+      PGDATA: /var/lib/postgresql/data
+    networks:
+      - nextcloud-network
+    labels:
+    # WatchTower monitoring
+      - com.centurylinklabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.scope=main-images
     healthcheck:
       test: [ "CMD", "pg_isready", "-q", "-d", "${NEXTCLOUD_DB_NAME}", "-U", "${NEXTCLOUD_DB_USER}" ]
       interval: 10s
@@ -19,10 +38,14 @@ services:
     restart: unless-stopped
 
   redis:
-    image: ${NEXTCLOUD_REDIS_IMAGE_TAG}
+    image: redis:7.2
     command: ["redis-server", "--requirepass", "$NEXTCLOUD_REDIS_PASSWORD"]
+    labels:
+    # WatchTower monitoring
+      - com.centurylinklabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.scope=main-images
     volumes:
-      - redis-data:/data
+      - ./redis/data:/data
     networks:
       - nextcloud-network
     healthcheck:
@@ -34,27 +57,84 @@ services:
     restart: unless-stopped
 
   nextcloud:
-    image: ${NEXTCLOUD_IMAGE_TAG}
+    image: nextcloud:28.0-apache
     volumes:
-      - nextcloud-data:${DATA_PATH}
+      - nextcloud-data:/var/www/html
     environment:
-      TZ: ${NEXTCLOUD_TIMEZONE}
-      POSTGRES_HOST: postgres
-      DB_PORT: 5432
+      #POSTGRES VARIABLES
       POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
       POSTGRES_USER: ${NEXTCLOUD_DB_USER}
       POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: ${NEXTCLOUD_DB_PORT}
+      #REDIS VARIABLES
       REDIS_HOST: redis
       REDIS_HOST_PORT: 6379
       REDIS_HOST_PASSWORD: ${NEXTCLOUD_REDIS_PASSWORD}
+      REDIS_HOST_FALLBACK_LIMIT: 5  # Optional: set a fallback limit
+      REDIS_SESSION_SAVE_HANDLER: redis  # Explicitly set Redis as session handler
+      REDIS_SESSION_SAVE_PATH: "tcp://redis:6379?auth=${NEXTCLOUD_REDIS_PASSWORD}"
+      #NEXTCLOUD VARIABLES
+      NEXTCLOUD_DEFAULT_PHONE_REGION: "AR"  # Replace US with your country's ISO 3166-1 code
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USERNAME}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
-      NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_HOSTNAME}
-      NEXTCLOUD_HOSTNAME: ${NEXTCLOUD_HOSTNAME}
-      OVERWRITECLIURL: ${NEXTCLOUD_URL}
-      OVERWRITEPROTOCOL: https
-      OVERWRITEHOST: ${NEXTCLOUD_HOSTNAME}
-      TRUSTED_PROXIES: 172.16.0.0/12 192.168.0.0/16 10.0.0.0/8 fc00::/7 fe80::/10 2001:db8::/32
+      NEXTCLOUD_TRUSTED_DOMAINS: "storage.localhost localhost 172.18.0.0/16" #loadbalancer 127.0.0.1 172.19.0.0/16 ::1
+      # Email Configuration
+      # Email Configuration
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_SECURE: ${SMTP_SECURE}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_AUTHTYPE: ${SMTP_AUTHTYPE}
+      SMTP_NAME: ${SMTP_NAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS}
+      MAIL_DOMAIN: ${MAIL_DOMAIN}
+      #APACHE CONFIG
+      TRUSTED_PROXIES: "172.18.0.0/16"
+      APACHE_DISABLE_REWRITE_IP: 1
+      APACHE_REMOTEIP_ENABLE: 1
+      APACHE_ENABLE_MO_REWRITE: 1
+      APACHE_SERVER_NAME: ${NEXTCLOUD_HOSTNAME}
+      APACHE_SERVER_ADMIN: ${NEXTCLOUD_ADMIN_EMAIL}
+      APACHE_ENABLE_SSL: false
+
+      TZ: ${NEXTCLOUD_TIMEZONE}
+    labels:
+    # WatchTower monitoring
+      - com.centurylinklabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.scope=main-images
+
+      - "traefik.enable=true"
+      - "traefik.http.routers.nextcloud.rule=Host(`storage.localhost`)"
+      - "traefik.http.routers.nextcloud.service=nextcloud"
+      - "traefik.http.routers.nextcloud.entrypoints=https"
+      - "traefik.http.routers.nextcloud.tls=true"
+      - "traefik.http.routers.nextcloud.tls.certresolver=le"
+      
+      - "traefik.http.routers.nextcloud-https.rule=Host(`${NEXTCLOUD_HOSTNAME}`)"
+      - "traefik.http.routers.nextcloud-https.service=nextcloud"
+      - "traefik.http.routers.nextcloud-https.entrypoints=https"
+      
+      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
+      - "traefik.http.services.nextcloud.loadbalancer.passhostheader=true"
+
+      - "traefik.http.middlewares.nextcloud-securityheaders.headers.stsSeconds=15552000"
+      - "traefik.http.middlewares.nextcloud-securityheaders.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.nextcloud-securityheaders.headers.stsPreload=true"
+      
+      - "traefik.http.routers.nextcloud.middlewares=nextcloud_redirectregex@docker"
+      - "traefik.http.middlewares.nextcloud_redirectregex.redirectregex.permanent=true"
+      - "traefik.http.middlewares.nextcloud_redirectregex.redirectregex.regex=https://(.*)/.well-known/(?:card|cal)dav"
+      - "traefik.http.middlewares.nextcloud_redirectregex.redirectregex.replacement=https://$${1}/remote.php/dav"
+
+      - "traefik.http.middlewares.compresstraefik.compress=true"
+      - "traefik.docker.network=traefik-server"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - nextcloud-network
       - traefik-server
@@ -64,45 +144,24 @@ services:
       timeout: 5s
       retries: 3
       start_period: 90s
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.nextcloud.rule=Host(`${NEXTCLOUD_HOSTNAME}`)"
-      - "traefik.http.routers.nextcloud.service=nextcloud"
-      - "traefik.http.routers.nextcloud.entrypoints=http"
-      - "traefik.http.routers.nextcloud.middlewares=https-redirect"
-      - "traefik.http.routers.nextcloud-https.rule=Host(`${NEXTCLOUD_HOSTNAME}`)"
-      - "traefik.http.routers.nextcloud-https.service=nextcloud"
-      - "traefik.http.routers.nextcloud-https.entrypoints=https"
-      - "traefik.http.routers.nextcloud.tls=true"
-      - "traefik.http.routers.nextcloud.tls.certresolver=letsencrypt"
-      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
-      - "traefik.http.services.nextcloud.loadbalancer.passhostheader=true"
-      - "traefik.http.middlewares.nextcloud-securityheaders.headers.stsSeconds=15552000"
-      - "traefik.http.middlewares.nextcloud-securityheaders.headers.stsIncludeSubdomains=true"
-      - "traefik.http.middlewares.nextcloud-securityheaders.headers.stsPreload=true"
-      - "traefik.http.routers.nextcloud.middlewares=nextcloud-redirectregex1,nextcloud-redirectregex2,compresstraefik,nextcloud-securityheaders"
-      - "traefik.http.middlewares.nextcloud-redirectregex1.redirectregex.permanent=true"
-      - "traefik.http.middlewares.nextcloud-redirectregex1.redirectregex.regex=https?://([^/]*)/.well-known/(card|cal)dav"
-      - "traefik.http.middlewares.nextcloud-redirectregex1.redirectregex.replacement=https://$${1}/remote.php/dav/"
-      - "traefik.http.middlewares.nextcloud-redirectregex2.redirectregex.permanent=true"
-      - "traefik.http.middlewares.nextcloud-redirectregex2.redirectregex.regex=https?://([^/]*)(/.well-known[^#]*)"
-      - "traefik.http.middlewares.nextcloud-redirectregex2.redirectregex.replacement=https://$${1}/index.php$${2}"
-      - "traefik.http.middlewares.compresstraefik.compress=true"
-      - "traefik.docker.network=traefik-server"
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
 
   nextcloud-cron:
-    image: ${NEXTCLOUD_IMAGE_TAG}
+    image: nextcloud:28.0-apache
     entrypoint: /cron.sh
+    labels:
+    # WatchTower monitoring
+      - com.centurylinklabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.scope=main-images
+    environment:
+      - NEXTCLOUD_UPDATE=1
     volumes:
-      - nextcloud-data:${DATA_PATH}
+      - nextcloud-data:/var/www/html
     networks:
       - nextcloud-network
+    depends_on:
+      - nextcloud
+    restart: unless-stopped
+
 networks:
   nextcloud-network:
     external: true
@@ -113,6 +172,3 @@ volumes:
   nextcloud-data:
   redis-data:
   nextcloud-postgres:
-  nextcloud-postgres-backup:
-  nextcloud-data-backups:
-  nextcloud-database-backups:
