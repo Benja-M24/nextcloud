@@ -1,0 +1,33 @@
+# Enter the DOMAIN for that project or use sub-domain.
+DOMAIN=storage.localhost
+
+# Nextcloud Variables
+NEXTCLOUD_ADMIN_USERNAME=admin
+NEXTCLOUD_ADMIN_PASSWORD=
+NEXTCLOUD_URL=https://storage.localhost
+NEXTCLOUD_HOSTNAME=storage.localhost
+NEXTCLOUD_ADMIN_EMAIL=admin@localhost
+DATA_PATH=/var/www/html
+
+NEXTCLOUD_REDIS_PASSWORD=
+
+#Postgres Variables
+NEXTCLOUD_DB_NAME=nextclouddb
+NEXTCLOUD_DB_USER=admin
+NEXTCLOUD_DB_PASSWORD=
+NEXTCLOUD_DB_HOST=postgres
+NEXTCLOUD_DB_PORT=5432
+
+##SMTP Variables
+SMTP_HOST=smtp.gmail.com
+SMTP_SECURE=tls
+SMTP_PORT=587
+SMTP_AUTHTYPE=LOGIN
+SMTP_NAME=your-email@gmail.com
+SMTP_PASSWORD=your-app-specific-password
+MAIL_FROM_ADDRESS=your-email
+MAIL_DOMAIN=gmail.com
+
+# Timezone inside container | contains a tz value from the tz database
+# https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+NEXTCLOUD_TIMEZONE=America/Argentina/Buenos_Aires
