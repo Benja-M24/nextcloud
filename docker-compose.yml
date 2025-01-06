@@ -1,18 +1,4 @@
 services:
-# WatchTower
-  watchtower:
-    image: containrrr/watchtower
-    restart: always
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: 
-      - "--label-enable"
-      - "--interval"
-      - "3600"
-      - "--rolling-restart"
-    networks:
-      - nextcloud-network
-      
   postgres:
     image: postgres:16
     volumes:
@@ -25,10 +11,6 @@ services:
       PGDATA: /var/lib/postgresql/data
     networks:
       - nextcloud-network
-    labels:
-    # WatchTower monitoring
-      - com.centurylinklabs.watchtower.enable=true
-      - com.centurylinklabs.watchtower.scope=main-images
     healthcheck:
       test: [ "CMD", "pg_isready", "-q", "-d", "${NEXTCLOUD_DB_NAME}", "-U", "${NEXTCLOUD_DB_USER}" ]
       interval: 10s
@@ -40,10 +22,6 @@ services:
   redis:
     image: redis:7.2
     command: ["redis-server", "--requirepass", "$NEXTCLOUD_REDIS_PASSWORD"]
-    labels:
-    # WatchTower monitoring
-      - com.centurylinklabs.watchtower.enable=true
-      - com.centurylinklabs.watchtower.scope=main-images
     volumes:
       - ./redis/data:/data
     networks:
@@ -100,10 +78,6 @@ services:
 
       TZ: ${NEXTCLOUD_TIMEZONE}
     labels:
-    # WatchTower monitoring
-      - com.centurylinklabs.watchtower.enable=true
-      - com.centurylinklabs.watchtower.scope=main-images
-
       - "traefik.enable=true"
       - "traefik.http.routers.nextcloud.rule=Host(`storage.localhost`)"
       - "traefik.http.routers.nextcloud.service=nextcloud"
@@ -148,10 +122,6 @@ services:
   nextcloud-cron:
     image: nextcloud:28.0-apache
     entrypoint: /cron.sh
-    labels:
-    # WatchTower monitoring
-      - com.centurylinklabs.watchtower.enable=true
-      - com.centurylinklabs.watchtower.scope=main-images
     environment:
       - NEXTCLOUD_UPDATE=1
     volumes:
