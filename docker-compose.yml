@@ -5,10 +5,11 @@ services:
       - ./postgres/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
       - ./postgres/nextcloud-postgres:/var/lib/postgresql/data
     environment:
-      POSTGRES_DB: nextclouddb
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: wDyzDH8MowfpuwGyBfNcnaV
-      PGDATA: /var/lib/postgresql/data
+      POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
+      POSTGRES_USER: ${NEXTCLOUD_DB_USER}
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      PGDATA: ${NEXTCLOUD_DB_PGDATA}
+
     networks:
       - nextcloud-network
     healthcheck:
@@ -43,7 +44,7 @@ services:
       POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
       POSTGRES_USER: ${NEXTCLOUD_DB_USER}
       POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
-      POSTGRES_HOST: postgres
+      POSTGRES_HOST: ${NEXTCLOUD_DB_HOST}
       POSTGRES_PORT: ${NEXTCLOUD_DB_PORT}
       #REDIS VARIABLES
       REDIS_HOST: redis
@@ -56,8 +57,7 @@ services:
       NEXTCLOUD_DEFAULT_PHONE_REGION: "AR"  # Replace US with your country's ISO 3166-1 code
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USERNAME}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
-      NEXTCLOUD_TRUSTED_DOMAINS: "storage.localhost localhost 172.18.0.0/16" #loadbalancer 127.0.0.1 172.19.0.0/16 ::1
-      # Email Configuration
+      NEXTCLOUD_TRUSTED_DOMAINS: "storage.lussocasteli.com lussocastelli.com"
       # Email Configuration
       SMTP_HOST: ${SMTP_HOST}
       SMTP_SECURE: ${SMTP_SECURE}
@@ -78,29 +78,24 @@ services:
 
       TZ: ${NEXTCLOUD_TIMEZONE}
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.nextcloud.rule=Host(`storage.localhost`)"
+      - "traefik.enable=true"      
+      - "traefik.http.routers.nextcloud.rule=Host(`${NEXTCLOUD_HOSTNAME}`)"
       - "traefik.http.routers.nextcloud.service=nextcloud"
       - "traefik.http.routers.nextcloud.entrypoints=https"
       - "traefik.http.routers.nextcloud.tls=true"
       - "traefik.http.routers.nextcloud.tls.certresolver=le"
-      
       - "traefik.http.routers.nextcloud-https.rule=Host(`${NEXTCLOUD_HOSTNAME}`)"
       - "traefik.http.routers.nextcloud-https.service=nextcloud"
       - "traefik.http.routers.nextcloud-https.entrypoints=https"
-      
       - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
       - "traefik.http.services.nextcloud.loadbalancer.passhostheader=true"
-
       - "traefik.http.middlewares.nextcloud-securityheaders.headers.stsSeconds=15552000"
       - "traefik.http.middlewares.nextcloud-securityheaders.headers.stsIncludeSubdomains=true"
       - "traefik.http.middlewares.nextcloud-securityheaders.headers.stsPreload=true"
-      
       - "traefik.http.routers.nextcloud.middlewares=nextcloud_redirectregex@docker"
       - "traefik.http.middlewares.nextcloud_redirectregex.redirectregex.permanent=true"
       - "traefik.http.middlewares.nextcloud_redirectregex.redirectregex.regex=https://(.*)/.well-known/(?:card|cal)dav"
       - "traefik.http.middlewares.nextcloud_redirectregex.redirectregex.replacement=https://$${1}/remote.php/dav"
-
       - "traefik.http.middlewares.compresstraefik.compress=true"
       - "traefik.docker.network=traefik-server"
     restart: unless-stopped
@@ -113,7 +108,7 @@ services:
       - nextcloud-network
       - traefik-server
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      test: ["CMD", "curl", "-f", "http:/${NEXTCLOUD_HOSTNAME}/:80/"]
       interval: 10s
       timeout: 5s
       retries: 3
