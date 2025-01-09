@@ -2,19 +2,35 @@
 Next cloud container prepared to work on Ubuntu server with traefik-ServerManager
 
 # To be executed in the server after nextcloud installation
-1. BD IMPORVE MISSING INDICES
-```
-docker compose exec -u www-data nextcloud php occ db:add-missing-indices
 
-```
-2. ENABLE MANTAINENCE BACKGROUND JOBS - CRON
-    - To set the maintenance window (6 am gmt-3), you'll need to run this command after the stack is up:
-    docker compose exec -u www-data nextcloud php occ config:system:set maintenance_window_start --type=integer --value=9
+## Steps
+1. Add Missing Database Indices
+Command:
 
-    - To verify the cron setup is working correctly, run:
-    docker compose exec -u www-data nextcloud php occ background:job:list
+> docker compose exec -u www-data nextcloud php occ db:add-missing-indices
 
-    - To ensure background jobs are set to use system cron:
-    docker compose exec -u www-data nextcloud php occ background:cron
+Purpose: This command adds any missing database indices, improving query performance.
+Execution: Run this command in the terminal where your docker-compose.yml file is located.
 
-3. 
+2. Enable Maintenance Background Jobs - Cron
+Set Maintenance Window:
+Command:
+
+> docker compose exec -u www-data nextcloud php occ config:system:set maintenance_window_start --type=integer --value=8
+
+Purpose: Sets the maintenance window to 5 am GMT-3 (which corresponds to 8 am UTC).
+Note: Ensure you understand the time conversion between your local time and UTC.
+
+Verify Cron Setup:
+Command:
+
+> docker compose exec -u www-data nextcloud php occ background-job:list
+
+Purpose: Lists background jobs to verify they are correctly configured.
+
+Ensure Background Jobs Use System Cron:
+Command:
+
+> docker compose exec -u www-data nextcloud php occ background:cron
+
+Purpose: Ensures background jobs are set to use the system cron for scheduling.
