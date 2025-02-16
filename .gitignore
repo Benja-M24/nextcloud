@@ -1,2 +1,5 @@
 .env
 redis/data/dump.rdb
+postgres
+redis
+
