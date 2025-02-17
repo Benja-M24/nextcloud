@@ -48,7 +48,7 @@ services:
       POSTGRES_PORT: ${NEXTCLOUD_DB_PORT}
       #REDIS VARIABLES
       REDIS_HOST: redis
-      REDIS_HOST_PORT: 6379
+      REDIS_HOST_PORT: ${NEXTCLOUD_REDIS_PORT}
       REDIS_HOST_PASSWORD: ${NEXTCLOUD_REDIS_PASSWORD}
       REDIS_HOST_FALLBACK_LIMIT: 5  # Optional: set a fallback limit
       REDIS_SESSION_SAVE_HANDLER: redis  # Explicitly set Redis as session handler
@@ -83,7 +83,7 @@ services:
       APACHE_SERVER_NAME: ${NEXTCLOUD_HOSTNAME}
       APACHE_SERVER_ADMIN: ${NEXTCLOUD_ADMIN_EMAIL}
       APACHE_ENABLE_SSL: false
-
+      # Other settings
       TZ: ${NEXTCLOUD_TIMEZONE}
     labels:
       traefik.enable: true
