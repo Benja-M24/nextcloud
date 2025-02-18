@@ -1,19 +1,18 @@
+version: '3.8'
 services:
   postgres:
     image: postgres:16
     volumes:
-      - ./postgres/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
-      - ./postgres/nextcloud-postgres:/var/lib/postgresql/data
+      - ./postgres/initdb.d:/docker-entrypoint-initdb.d
+      - postgres_data:/var/lib/postgresql/data
     environment:
       POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
       POSTGRES_USER: ${NEXTCLOUD_DB_USER}
       POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
-      PGDATA: ${NEXTCLOUD_DB_PGDATA}
-
     networks:
       - nextcloud-network
     healthcheck:
-      test: [ "CMD", "pg_isready", "-q", "-d", "${NEXTCLOUD_DB_NAME}", "-U", "${NEXTCLOUD_DB_USER}" ]
+      test: ["CMD-SHELL", "pg_isready -U ${NEXTCLOUD_DB_USER} -d ${NEXTCLOUD_DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -21,14 +20,14 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7.2
-    command: ["redis-server", "--requirepass", "$NEXTCLOUD_REDIS_PASSWORD"]
+    image: redis:7.2-alpine
+    command: redis-server --requirepass ${NEXTCLOUD_REDIS_PASSWORD}
     volumes:
-      - ./redis/data:/data
+      - redis_data:/data
     networks:
       - nextcloud-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${NEXTCLOUD_REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -37,122 +36,106 @@ services:
 
   nextcloud:
     image: nextcloud:28.0-apache
-    volumes:
-      - nextcloud-data:/var/www/html
-    environment:
-      #POSTGRES VARIABLES
-      POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
-      POSTGRES_USER: ${NEXTCLOUD_DB_USER}
-      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
-      POSTGRES_HOST: ${NEXTCLOUD_DB_HOST}
-      POSTGRES_PORT: ${NEXTCLOUD_DB_PORT}
-      #REDIS VARIABLES
-      REDIS_HOST: redis
-      REDIS_HOST_PORT: ${NEXTCLOUD_REDIS_PORT}
-      REDIS_HOST_PASSWORD: ${NEXTCLOUD_REDIS_PASSWORD}
-      REDIS_HOST_FALLBACK_LIMIT: 5  # Optional: set a fallback limit
-      REDIS_SESSION_SAVE_HANDLER: redis  # Explicitly set Redis as session handler
-      REDIS_SESSION_SAVE_PATH: "tcp://redis:6379?auth: ${NEXTCLOUD_REDIS_PASSWORD}"
-      #NEXTCLOUD VARIABLES
-      NEXTCLOUD_DEFAULT_PHONE_REGION: "AR"  # Replace US with your country's ISO 3166-1 code
-      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USERNAME}
-      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
-      NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_HOSTNAME}
-      # Email Configuration
-      SMTP_MODE: ${SMTP_MODE}                   # e.g., smtp, sendmail, or qmail
-      SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT}
-      SMTP_TIMEOUT: ${SMTP_TIMEOUT}             # e.g., 10 (seconds)
-      SMTP_SECURE: ${SMTP_SECURE}               # e.g., '', 'ssl', or 'starttls'
-      SMTP_AUTH: ${SMTP_AUTH}                   # e.g., true or false
-      SMTP_AUTHTYPE: ${SMTP_AUTHTYPE}           # e.g., LOGIN, PLAIN, or CRAM-MD5
-      SMTP_NAME: ${SMTP_NAME}
-      SMTP_PASSWORD: ${SMTP_PASSWORD}
-      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS}
-      MAIL_DOMAIN: ${MAIL_DOMAIN}
-      # Overwrite parameters
-      OVERWRITEPROTOCOL: https
-      OVERWRITEHOST: ${NEXTCLOUD_HOSTNAME}
-      OVERWRITE_CLI_URL: https://${NEXTCLOUD_HOSTNAME}
-      #APACHE CONFIG
-      TRUSTED_PROXIES: "172.64.1.2/24"
-      APACHE_DISABLE_REWRITE_IP: 1
-      APACHE_REMOTEIP_ENABLE: 1
-      APACHE_ENABLE_MO_REWRITE: 1
-      APACHE_BODY_LIMIT: 0
-      APACHE_SERVER_NAME: ${NEXTCLOUD_HOSTNAME}
-      APACHE_SERVER_ADMIN: ${NEXTCLOUD_ADMIN_EMAIL}
-      APACHE_ENABLE_SSL: false
-      # Other settings
-      TZ: ${NEXTCLOUD_TIMEZONE}
-    labels:
-      traefik.enable: true
-      traefik.http.routers.nextcloud.rule: "Host(`${NEXTCLOUD_HOSTNAME}`)"
-      traefik.http.routers.nextcloud.service: "nextcloud"
-      traefik.http.routers.nextcloud.entrypoints: "https"
-      traefik.http.routers.nextcloud.tls: "true"
-      traefik.http.routers.nextcloud.tls.certresolver: "le"
-      traefik.http.services.nextcloud.loadbalancer.server.port: "80"
-      traefik.http.services.nextcloud.loadbalancer.passhostheader: "true"
-      
-      # Headers middleware
-      traefik.http.middlewares.nextcloud-headers.headers.sslredirect: "true"
-      traefik.http.middlewares.nextcloud-headers.headers.stsseconds: "15552000"
-      traefik.http.middlewares.nextcloud-headers.headers.customframeoptionsvalue: "sameorigin"
-      traefik.http.middlewares.nextcloud-headers.headers.contenttypeoptions: "nosniff"
-      traefik.http.middlewares.nextcloud-headers.headers.forcestsheader: "true"
-      traefik.http.middlewares.nextcloud-headers.headers.sslhost: "${NEXTCLOUD_HOSTNAME}"
-      traefik.http.middlewares.nextcloud-headers.headers.customrequestheaders.X-Forwarded-Proto: "https"
-      #Security Headers middleware
-      traefik.http.middlewares.nextcloud-securityheaders.headers.stsSeconds: "15552000"
-      traefik.http.middlewares.nextcloud-securityheaders.headers.stsIncludeSubdomains: "true"
-      traefik.http.middlewares.nextcloud-securityheaders.headers.stsPreload: "true"
-      #Redirect regex middleware
-      traefik.http.middlewares.nextcloud_redirectregex.redirectregex.permanent: "true"
-      traefik.http.middlewares.nextcloud_redirectregex.redirectregex.regex: "https://(.*)/.well-known/(?:card|cal)dav"
-      traefik.http.middlewares.nextcloud_redirectregex.redirectregex.replacement: "https://$${1}/remote.php/dav"
-      
-      traefik.http.middlewares.compresstraefik.compress: "true"
-      traefik.http.routers.nextcloud.middlewares: "nextcloud-headers,nextcloud-securityheaders,nextcloud_redirectregex"
-      
-      traefik.docker.network: "traefik-server"
-
-    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - nextcloud_data:/var/www/html
+      # TODO RESEARCH AND ADD EXECUTABLE FILE WITH COMMANDS TO INITIALIZE NEXTCLOUD AT THE MOST UPDATED VERSION
+    command: docker/nextcloud-docker-entrypoint.sh
+    environment:
+      # Database configuration
+      POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
+      POSTGRES_USER: ${NEXTCLOUD_DB_USER}
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: ${NEXTCLOUD_DB_PORT}
+      # Redis configuration
+      REDIS_HOST: redis
+      REDIS_HOST_PORT: ${NEXTCLOUD_REDIS_PORT}
+      REDIS_HOST_PASSWORD: ${NEXTCLOUD_REDIS_PASSWORD}
+      REDIS_SESSION_STORE: 1
+      # Nextcloud configuration
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USERNAME}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
+      NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_HOSTNAME}
+      # SMTP configuration
+      PHP_MEMORY_LIMIT: 1G
+      PHP_UPLOAD_LIMIT: 10G
+      MAIL_DOMAIN: ${MAIL_DOMAIN}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS}
+      MAIL_SMTP_SECURE: ${SMTP_SECURE}
+      MAIL_SMTP_HOST: ${SMTP_HOST}
+      MAIL_SMTP_PORT: ${SMTP_PORT}
+      MAIL_SMTP_AUTHTYPE: LOGIN
+      MAIL_SMTP_NAME: ${SMTP_NAME}
+      MAIL_SMTP_PASSWORD: ${SMTP_PASSWORD}
+      # Overwrite configuration
+      OVERWRITEPROTOCOL: https
+      OVERWRITEHOST: ${NEXTCLOUD_HOSTNAME}
+      OVERWRITECLIURL: https://${NEXTCLOUD_HOSTNAME}
+      TRUSTED_PROXIES: "172.64.1.0/16, fd00:1::/64" # Ajustar según red de Traefik
+      APACHE_REMOTEIP_ENABLE: 1
+      # Optimizations
+      APCU_ENABLE: 1
+      PHP_OPCACHE_ENABLE: 1
+      # Other settings
+      TZ: ${NEXTCLOUD_TIMEZONE}
+
     networks:
       - nextcloud-network
       - traefik-server
+    labels:
+      - traefik.enable=true
+      # Router configuration
+      - traefik.http.routers.nextcloud.rule=Host(`${NEXTCLOUD_HOSTNAME}`)
+      - traefik.http.routers.nextcloud.entrypoints=websecure
+      # TLS configuration
+      - traefik.http.routers.nextcloud.tls=true
+      - traefik.http.routers.nextcloud.tls.certresolver=le
+      - traefik.http.routers.nextcloud.tls.domains[0].main=${NEXTCLOUD_HOSTNAME}
+      # Security middleware configuration
+      - traefik.http.middlewares.nextcloud-headers.headers.sslredirect=true
+      - traefik.http.middlewares.nextcloud-headers.headers.stsseconds=31536000
+      - traefik.http.middlewares.nextcloud-headers.headers.customrequestheaders.X-Forwarded-Proto=https
+      - traefik.http.routers.nextcloud.middlewares=nextcloud-headers
+      # Service configuration
+      - traefik.http.services.nextcloud.loadbalancer.server.port=80
+      - traefik.docker.network=traefik-server
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 90s
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   nextcloud-cron:
     image: nextcloud:28.0-apache
     entrypoint: /cron.sh
-    environment:
-      NEXTCLOUD_UPDATE: "1"
     volumes:
-      - nextcloud-data:/var/www/html
-    networks:
-      - nextcloud-network
+      - nextcloud_data:/var/www/html
     depends_on:
       - nextcloud
+    networks:
+      - nextcloud-network
     restart: unless-stopped
 
 networks:
   nextcloud-network:
-    external: true
+    name: nextcloud-network
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.16.1.0/24
+        - subnet: fd00:16::/64 
   traefik-server:
     external: true
 
 volumes:
-  nextcloud-data:
-  redis-data:
-  nextcloud-postgres:
+  nextcloud_data:
+  redis_data:
+  postgres_data:
