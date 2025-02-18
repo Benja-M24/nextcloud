@@ -44,7 +44,7 @@ services:
     volumes:
       - nextcloud_data:/var/www/html
       # TODO RESEARCH AND ADD EXECUTABLE FILE WITH COMMANDS TO INITIALIZE NEXTCLOUD AT THE MOST UPDATED VERSION
-    command: docker/nextcloud-docker-entrypoint.sh
+    # command: docker/nextcloud-docker-entrypoint.sh
     environment:
       # Database configuration
       POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
