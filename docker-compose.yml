@@ -1,4 +1,4 @@
-version: '3.8'
+---
 services:
   postgres:
     image: postgres:16
@@ -84,34 +84,22 @@ services:
       # Other settings
       TZ: ${NEXTCLOUD_TIMEZONE}
 
-    networks:
-      - nextcloud-network
-      - traefik-server
     labels:
       - traefik.enable=true
       # Router configuration
-      - traefik.http.routers.nextcloud.rule=Host(`${NEXTCLOUD_HOSTNAME}`)
-      - traefik.http.routers.nextcloud.entrypoints=websecure
-      # TLS configuration
-      - traefik.http.routers.nextcloud.tls=true
-      - traefik.http.routers.nextcloud.tls.certresolver=le
-      - traefik.http.routers.nextcloud.tls.domains[0].main=${NEXTCLOUD_HOSTNAME}
-      # Security middleware configuration
-      - traefik.http.middlewares.nextcloud-headers.headers.sslredirect=true
-      - traefik.http.middlewares.nextcloud-headers.headers.stsseconds=31536000
-      - traefik.http.middlewares.nextcloud-headers.headers.customrequestheaders.X-Forwarded-Proto=https
-      - traefik.http.routers.nextcloud.middlewares=nextcloud-headers
-      # Service configuration
-      - traefik.http.services.nextcloud.loadbalancer.server.port=80
+      - traefik.http.routers.nextcloud-https.entrypoints=https
+      - traefik.http.routers.nextcloud-https.rule=Host(`${NEXTCLOUD_HOSTNAME}`)
+      - traefik.http.routers.nextcloud-https.tls=true
+      - traefik.http.routers.nextcloud-https.tls.certresolver=le
+      - traefik.http.services.nextcloud.loadbalancer.server.port=8080
       - traefik.docker.network=traefik-server
+      # Security middleware configuration
+      - traefik.http.routers.nextcloud-https.middlewares=security-headers
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-
+    networks:
+      - nextcloud-network
+      - traefik-server
+    
   nextcloud-cron:
     image: nextcloud:28.0-apache
     entrypoint: /cron.sh
